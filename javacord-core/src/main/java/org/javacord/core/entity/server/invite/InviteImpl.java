@@ -10,6 +10,7 @@ import org.javacord.api.entity.channel.ServerChannel;
 import org.javacord.api.entity.server.Server;
 import org.javacord.api.entity.server.invite.Invite;
 import org.javacord.api.entity.server.invite.RichInvite;
+import org.javacord.api.entity.server.invite.TargetUserType;
 import org.javacord.api.entity.user.User;
 import org.javacord.core.DiscordApiImpl;
 import org.javacord.core.entity.IconImpl;
@@ -89,6 +90,16 @@ public class InviteImpl implements RichInvite {
     private final User inviter;
 
     /**
+     * The target user of the invite. May be <code>null</code>.
+     */
+    private final User targetUser;
+
+    /**
+     * The target user type of the invite. May be <code>null</code>.
+     */
+    private final TargetUserType targetUserType;
+
+    /**
      * The number of times this invite has been used.
      */
     private final int uses;
@@ -137,17 +148,47 @@ public class InviteImpl implements RichInvite {
     public InviteImpl(DiscordApi api, JsonNode data) {
         this.api = api;
         this.code = data.get("code").asText();
-        this.serverId = Long.parseLong(data.get("guild").get("id").asText());
-        this.serverName = data.get("guild").get("name").asText();
-        this.serverIcon = data.get("guild").has("icon") && !data.get("guild").get("icon").isNull()
-                ? data.get("guild").get("icon").asText()
-                : null;
-        this.serverSplash = data.get("guild").has("splash") && !data.get("guild").get("splash").isNull()
-                ? data.get("guild").get("splash").asText()
-                : null;
-        this.channelId = Long.parseLong(data.get("channel").get("id").asText());
-        this.channelName = data.get("channel").get("name").asText();
-        this.channelType = ChannelType.fromId(data.get("channel").get("type").asInt());
+        if (data.has("guild")) {
+            this.serverId = Long.parseLong(data.get("guild").get("id").asText());
+            this.serverName = data.get("guild").get("name").asText();
+            this.serverIcon = data.get("guild").has("icon") && !data.get("guild").get("icon").isNull()
+                    ? data.get("guild").get("icon").asText()
+                    : null;
+            this.serverSplash = data.get("guild").has("splash") && !data.get("guild").get("splash").isNull()
+                    ? data.get("guild").get("splash").asText()
+                    : null;
+        } else if (data.has("guild_id")) {
+            this.serverId = Long.parseLong(data.get("guild_id").asText());
+            Optional<Server> serverOptional = api.getServerById(serverId);
+            if (serverOptional.isPresent()) {
+                ServerImpl server = (ServerImpl) serverOptional.get();
+                this.serverName = server.getName();
+                this.serverIcon = server.getIconHash();
+                this.serverSplash = server.getSplashHash();
+            } else {
+                throw new AssertionError("Received invite for unknown server!");
+            }
+        } else {
+            throw new AssertionError("Invite has no guild_id or guild object!");
+        }
+
+        if (data.has("channel")) {
+            this.channelId = Long.parseLong(data.get("channel").get("id").asText());
+            this.channelName = data.get("channel").get("name").asText();
+            this.channelType = ChannelType.fromId(data.get("channel").get("type").asInt());
+        } else if (data.has("channel_id")) {
+            this.channelId = Long.parseLong(data.get("channel_id").asText());
+            Optional<ServerChannel> channelOptional = api.getServerChannelById(channelId);
+            if (channelOptional.isPresent()) {
+                ServerChannel channel = channelOptional.get();
+                this.channelName = channel.getName();
+                this.channelType = channel.getType();
+            } else {
+                throw new AssertionError("Received invite for unknown channel!");
+            }
+        } else {
+            throw new AssertionError("Invite has no channel_id or channel object!");
+        }
 
         // May not be present / only present if requested
         this.approximateMemberCount = (data.has("approximate_member_count"))
@@ -155,6 +196,14 @@ public class InviteImpl implements RichInvite {
                 : null;
         this.approximatePresenceCount = (data.has("approximate_presence_count"))
                 ? data.get("approximate_presence_count").asInt()
+                : null;
+        MemberImpl targetMember = null;
+        this.targetUser = data.has("target_user")
+                ? new UserImpl((DiscordApiImpl) api, data.get("inviter"), targetMember,
+                getServer().map(ServerImpl.class::cast).orElse(null))
+                : null;
+        this.targetUserType = data.has("target_user_type")
+                ? TargetUserType.fromId(data.get("target_user_type").asInt())
                 : null;
 
         // Rich data (may not be present)
@@ -261,8 +310,18 @@ public class InviteImpl implements RichInvite {
     }
 
     @Override
-    public User getInviter() {
-        return inviter;
+    public Optional<User> getInviter() {
+        return Optional.ofNullable(inviter);
+    }
+
+    @Override
+    public Optional<User> getTargetUser() {
+        return Optional.ofNullable(targetUser);
+    }
+
+    @Override
+    public Optional<TargetUserType> getTargetUserType() {
+        return Optional.ofNullable(targetUserType);
     }
 
     @Override

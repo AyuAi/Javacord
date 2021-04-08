@@ -8,6 +8,8 @@ import org.javacord.api.entity.channel.Categorizable;
 import org.javacord.api.entity.channel.ChannelCategory;
 import org.javacord.api.entity.channel.ChannelType;
 import org.javacord.api.entity.channel.ServerChannel;
+import org.javacord.api.entity.channel.ServerTextChannel;
+import org.javacord.api.entity.channel.ServerVoiceChannel;
 import org.javacord.api.entity.permission.Permissions;
 import org.javacord.api.entity.permission.Role;
 import org.javacord.api.entity.user.User;
@@ -18,11 +20,13 @@ import org.javacord.api.event.channel.server.ServerChannelChangeOverwrittenPermi
 import org.javacord.api.event.channel.server.ServerChannelChangePositionEvent;
 import org.javacord.api.event.channel.server.text.ServerTextChannelChangeSlowmodeEvent;
 import org.javacord.api.event.channel.server.text.ServerTextChannelChangeTopicEvent;
+import org.javacord.api.event.channel.server.voice.ServerStageVoiceChannelChangeTopicEvent;
 import org.javacord.api.event.channel.server.voice.ServerVoiceChannelChangeBitrateEvent;
 import org.javacord.api.event.channel.server.voice.ServerVoiceChannelChangeUserLimitEvent;
 import org.javacord.core.entity.channel.ChannelCategoryImpl;
 import org.javacord.core.entity.channel.GroupChannelImpl;
 import org.javacord.core.entity.channel.ServerChannelImpl;
+import org.javacord.core.entity.channel.ServerStageVoiceChannelImpl;
 import org.javacord.core.entity.channel.ServerTextChannelImpl;
 import org.javacord.core.entity.channel.ServerVoiceChannelImpl;
 import org.javacord.core.entity.permission.PermissionsImpl;
@@ -34,6 +38,7 @@ import org.javacord.core.event.channel.server.ServerChannelChangeOverwrittenPerm
 import org.javacord.core.event.channel.server.ServerChannelChangePositionEventImpl;
 import org.javacord.core.event.channel.server.text.ServerTextChannelChangeSlowmodeEventImpl;
 import org.javacord.core.event.channel.server.text.ServerTextChannelChangeTopicEventImpl;
+import org.javacord.core.event.channel.server.voice.ServerStageVoiceChannelChangeTopicEventImpl;
 import org.javacord.core.event.channel.server.voice.ServerVoiceChannelChangeBitrateEventImpl;
 import org.javacord.core.event.channel.server.voice.ServerVoiceChannelChangeUserLimitEventImpl;
 import org.javacord.core.util.event.DispatchQueueSelector;
@@ -81,6 +86,11 @@ public class ChannelUpdateHandler extends PacketHandler {
                 handleServerChannel(packet);
                 handleServerVoiceChannel(packet);
                 break;
+            case SERVER_STAGE_VOICE_CHANNEL:
+                handleServerChannel(packet);
+                handleServerVoiceChannel(packet);
+                handleServerStageVoiceChannel(packet);
+                break;
             case GROUP_CHANNEL:
                 handleGroupChannel(packet);
                 break;
@@ -89,7 +99,10 @@ public class ChannelUpdateHandler extends PacketHandler {
                 handleChannelCategory(packet);
                 break;
             case SERVER_NEWS_CHANNEL:
+                logger.debug("Received CHANNEL_UPDATE packet for a news channel. In this Javacord version it is "
+                        + "treated as a normal text channel!");
                 handleServerChannel(packet);
+                handleServerTextChannel(packet);
                 break;
             case SERVER_STORE_CHANNEL:
                 // TODO Handle store channels
@@ -164,9 +177,9 @@ public class ChannelUpdateHandler extends PacketHandler {
                 Permissions oldOverwrittenPermissions;
                 ConcurrentHashMap<Long, Permissions> overwrittenPermissions;
                 long entityId = permissionOverwriteJson.get("id").asLong();
-                Optional<DiscordEntity> entity = Optional.empty();
-                switch (permissionOverwriteJson.get("type").asText()) {
-                    case "role":
+                Optional<DiscordEntity> entity;
+                switch (permissionOverwriteJson.get("type").asInt()) {
+                    case 0:
                         Role role = server.getRoleById(entityId).orElseThrow(() ->
                                 new IllegalStateException("Received channel update event with unknown role!"));
                         entity = Optional.of(role);
@@ -174,7 +187,7 @@ public class ChannelUpdateHandler extends PacketHandler {
                         overwrittenPermissions = channel.getInternalOverwrittenRolePermissions();
                         rolesWithOverwrittenPermissions.add(entityId);
                         break;
-                    case "member":
+                    case 1:
                         oldOverwrittenPermissions = channel.getOverwrittenUserPermissions()
                                 .getOrDefault(entityId, PermissionsImpl.EMPTY_PERMISSIONS);
                         entity = api.getCachedUserById(entityId).map(DiscordEntity.class::cast);
@@ -185,8 +198,8 @@ public class ChannelUpdateHandler extends PacketHandler {
                         throw new IllegalStateException("Permission overwrite object with unknown type: "
                                 + permissionOverwriteJson);
                 }
-                int allow = permissionOverwriteJson.get("allow").asInt(0);
-                int deny = permissionOverwriteJson.get("deny").asInt(0);
+                long allow = permissionOverwriteJson.get("allow").asLong(0);
+                long deny = permissionOverwriteJson.get("deny").asLong(0);
                 Permissions newOverwrittenPermissions = new PermissionsImpl(allow, deny);
                 if (!newOverwrittenPermissions.equals(oldOverwrittenPermissions)) {
                     overwrittenPermissions.put(entityId, newOverwrittenPermissions);
@@ -277,43 +290,49 @@ public class ChannelUpdateHandler extends PacketHandler {
      */
     private void handleServerTextChannel(JsonNode jsonChannel) {
         long channelId = jsonChannel.get("id").asLong();
-        api.getTextChannelById(channelId).map(c -> ((ServerTextChannelImpl) c)).ifPresent(channel -> {
-            String oldTopic = channel.getTopic();
-            String newTopic = jsonChannel.has("topic") && !jsonChannel.get("topic").isNull()
-                    ? jsonChannel.get("topic").asText() : "";
-            if (!oldTopic.equals(newTopic)) {
-                channel.setTopic(newTopic);
+        Optional<ServerTextChannel> optionalChannel = api.getServerTextChannelById(channelId);
+        if (!optionalChannel.isPresent()) {
+            LoggerUtil.logMissingChannel(logger, channelId);
+            return;
+        }
 
-                ServerTextChannelChangeTopicEvent event =
-                        new ServerTextChannelChangeTopicEventImpl(channel, newTopic, oldTopic);
+        ServerTextChannelImpl channel = (ServerTextChannelImpl) optionalChannel.get();
 
-                api.getEventDispatcher().dispatchServerTextChannelChangeTopicEvent(
-                        (DispatchQueueSelector) channel.getServer(), channel.getServer(), channel, event);
-            }
+        String oldTopic = channel.getTopic();
+        String newTopic = jsonChannel.has("topic") && !jsonChannel.get("topic").isNull()
+                ? jsonChannel.get("topic").asText() : "";
+        if (!oldTopic.equals(newTopic)) {
+            channel.setTopic(newTopic);
 
-            boolean oldNsfwFlag = channel.isNsfw();
-            boolean newNsfwFlag = jsonChannel.get("nsfw").asBoolean();
-            if (oldNsfwFlag != newNsfwFlag) {
-                channel.setNsfwFlag(newNsfwFlag);
-                ServerChannelChangeNsfwFlagEvent event =
-                        new ServerChannelChangeNsfwFlagEventImpl(channel, newNsfwFlag, oldNsfwFlag);
+            ServerTextChannelChangeTopicEvent event =
+                    new ServerTextChannelChangeTopicEventImpl(channel, newTopic, oldTopic);
 
-                api.getEventDispatcher().dispatchServerChannelChangeNsfwFlagEvent(
-                        (DispatchQueueSelector) channel.getServer(), null, channel.getServer(), channel, event);
-            }
+            api.getEventDispatcher().dispatchServerTextChannelChangeTopicEvent(
+                    (DispatchQueueSelector) channel.getServer(), channel.getServer(), channel, event);
+        }
 
-            int oldSlowmodeDelay = channel.getSlowmodeDelayInSeconds();
-            int newSlowmodeDelay = jsonChannel.get("rate_limit_per_user").asInt(0);
-            if (oldSlowmodeDelay != newSlowmodeDelay) {
-                channel.setSlowmodeDelayInSeconds(newSlowmodeDelay);
-                ServerTextChannelChangeSlowmodeEvent event =
-                        new ServerTextChannelChangeSlowmodeEventImpl(channel, oldSlowmodeDelay, newSlowmodeDelay);
+        boolean oldNsfwFlag = channel.isNsfw();
+        boolean newNsfwFlag = jsonChannel.get("nsfw").asBoolean();
+        if (oldNsfwFlag != newNsfwFlag) {
+            channel.setNsfwFlag(newNsfwFlag);
+            ServerChannelChangeNsfwFlagEvent event =
+                    new ServerChannelChangeNsfwFlagEventImpl(channel, newNsfwFlag, oldNsfwFlag);
 
-                api.getEventDispatcher().dispatchServerTextChannelChangeSlowmodeEvent(
-                        (DispatchQueueSelector) channel.getServer(), channel.getServer(), channel, event
-                );
-            }
-        });
+            api.getEventDispatcher().dispatchServerChannelChangeNsfwFlagEvent(
+                    (DispatchQueueSelector) channel.getServer(), null, channel.getServer(), channel, event);
+        }
+
+        int oldSlowmodeDelay = channel.getSlowmodeDelayInSeconds();
+        int newSlowmodeDelay = jsonChannel.get("rate_limit_per_user").asInt(0);
+        if (oldSlowmodeDelay != newSlowmodeDelay) {
+            channel.setSlowmodeDelayInSeconds(newSlowmodeDelay);
+            ServerTextChannelChangeSlowmodeEvent event =
+                    new ServerTextChannelChangeSlowmodeEventImpl(channel, oldSlowmodeDelay, newSlowmodeDelay);
+
+            api.getEventDispatcher().dispatchServerTextChannelChangeSlowmodeEvent(
+                    (DispatchQueueSelector) channel.getServer(), channel.getServer(), channel, event
+            );
+        }
     }
 
     /**
@@ -323,29 +342,60 @@ public class ChannelUpdateHandler extends PacketHandler {
      */
     private void handleServerVoiceChannel(JsonNode jsonChannel) {
         long channelId = jsonChannel.get("id").asLong();
-        api.getServerVoiceChannelById(channelId).map(ServerVoiceChannelImpl.class::cast).ifPresent(channel -> {
-            int oldBitrate = channel.getBitrate();
-            int newBitrate = jsonChannel.get("bitrate").asInt();
-            if (oldBitrate != newBitrate) {
-                channel.setBitrate(newBitrate);
-                ServerVoiceChannelChangeBitrateEvent event =
-                        new ServerVoiceChannelChangeBitrateEventImpl(channel, newBitrate, oldBitrate);
+        Optional<ServerVoiceChannel> optionalChannel = api.getServerVoiceChannelById(channelId);
+        if (!optionalChannel.isPresent()) {
+            LoggerUtil.logMissingChannel(logger, channelId);
+            return;
+        }
 
-                api.getEventDispatcher().dispatchServerVoiceChannelChangeBitrateEvent(
-                        (DispatchQueueSelector) channel.getServer(), channel.getServer(), channel, event);
-            }
+        ServerVoiceChannelImpl channel = (ServerVoiceChannelImpl) optionalChannel.get();
 
-            int oldUserLimit = channel.getUserLimit().orElse(0);
-            int newUserLimit = jsonChannel.get("user_limit").asInt();
-            if (oldUserLimit != newUserLimit) {
-                channel.setUserLimit(newUserLimit);
-                ServerVoiceChannelChangeUserLimitEvent event =
-                        new ServerVoiceChannelChangeUserLimitEventImpl(channel, newUserLimit, oldUserLimit);
+        int oldBitrate = channel.getBitrate();
+        int newBitrate = jsonChannel.get("bitrate").asInt();
+        if (oldBitrate != newBitrate) {
+            channel.setBitrate(newBitrate);
+            ServerVoiceChannelChangeBitrateEvent event =
+                    new ServerVoiceChannelChangeBitrateEventImpl(channel, newBitrate, oldBitrate);
 
-                api.getEventDispatcher().dispatchServerVoiceChannelChangeUserLimitEvent(
-                        (DispatchQueueSelector) channel.getServer(), channel.getServer(), channel, event);
-            }
-        });
+            api.getEventDispatcher().dispatchServerVoiceChannelChangeBitrateEvent(
+                    (DispatchQueueSelector) channel.getServer(), channel.getServer(), channel, event);
+        }
+
+        int oldUserLimit = channel.getUserLimit().orElse(0);
+        int newUserLimit = jsonChannel.get("user_limit").asInt();
+        if (oldUserLimit != newUserLimit) {
+            channel.setUserLimit(newUserLimit);
+            ServerVoiceChannelChangeUserLimitEvent event =
+                    new ServerVoiceChannelChangeUserLimitEventImpl(channel, newUserLimit, oldUserLimit);
+
+            api.getEventDispatcher().dispatchServerVoiceChannelChangeUserLimitEvent(
+                    (DispatchQueueSelector) channel.getServer(), channel.getServer(), channel, event);
+        }
+
+    }
+
+    /**
+     * Handles a server stage voice channel update.
+     *
+     * @param jsonChannel The channel data.
+     */
+    private void handleServerStageVoiceChannel(JsonNode jsonChannel) {
+        long channelId = jsonChannel.get("id").asLong();
+        api.getServerStageVoiceChannelById(channelId)
+                .map(ServerStageVoiceChannelImpl.class::cast).ifPresent(channel -> {
+                    String oldTopic = channel.getTopic().orElse(null);
+                    String newTopic = jsonChannel.hasNonNull("topic")
+                            ? jsonChannel.get("topic").asText()
+                            : null;
+                    if (!Objects.equals(oldTopic, newTopic)) {
+                        channel.setTopic(newTopic);
+                        ServerStageVoiceChannelChangeTopicEvent event =
+                                new ServerStageVoiceChannelChangeTopicEventImpl(channel, newTopic, oldTopic);
+                        api.getEventDispatcher().dispatchServerStageVoiceChannelChangeTopicEvent(
+                                (DispatchQueueSelector) channel.getServer(), channel.getServer(), channel, event
+                        );
+                    }
+                });
     }
 
     /**

@@ -9,10 +9,12 @@ import org.javacord.api.entity.channel.ChannelCategory;
 import org.javacord.api.entity.channel.GroupChannel;
 import org.javacord.api.entity.channel.PrivateChannel;
 import org.javacord.api.entity.channel.ServerChannel;
+import org.javacord.api.entity.channel.ServerStageVoiceChannel;
 import org.javacord.api.entity.channel.ServerTextChannel;
 import org.javacord.api.entity.channel.ServerVoiceChannel;
 import org.javacord.api.entity.channel.TextChannel;
 import org.javacord.api.entity.channel.VoiceChannel;
+import org.javacord.api.entity.emoji.CustomEmoji;
 import org.javacord.api.entity.emoji.KnownCustomEmoji;
 import org.javacord.api.entity.intent.Intent;
 import org.javacord.api.entity.message.Message;
@@ -25,6 +27,7 @@ import org.javacord.api.entity.server.ServerBuilder;
 import org.javacord.api.entity.server.invite.Invite;
 import org.javacord.api.entity.user.User;
 import org.javacord.api.entity.user.UserStatus;
+import org.javacord.api.entity.webhook.IncomingWebhook;
 import org.javacord.api.entity.webhook.Webhook;
 import org.javacord.api.listener.GloballyAttachableListenerManager;
 import org.javacord.api.util.DiscordRegexPattern;
@@ -46,12 +49,16 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
  * This class is the most important class for your bot, containing all important methods, like registering listener.
  */
 public interface DiscordApi extends GloballyAttachableListenerManager {
+
+    Pattern ESCAPED_CHARACTER =
+            Pattern.compile("\\\\(?<char>[^a-zA-Z0-9\\p{javaWhitespace}\\xa0\\u2007\\u202E\\u202F])");
 
     /**
      * Gets the used token.
@@ -108,6 +115,17 @@ public interface DiscordApi extends GloballyAttachableListenerManager {
      * @return The current global ratelimiter.
      */
     Optional<Ratelimiter> getGlobalRatelimiter();
+
+    /**
+     * Gets the current gateway identify ratelimiter.
+     *
+     * <p>If you did not provide a ratelimiter yourself, this method will return a {@link LocalRatelimiter}
+     * which is set to allow one gateway identify request per 5500ms and is shared with every bot with the same token
+     * in the same Java program.
+     *
+     * @return The current gateway identify ratelimiter.
+     */
+    Ratelimiter getGatewayIdentifyRatelimiter();
 
     /**
      * Gets the latest gateway latency.
@@ -401,6 +419,43 @@ public interface DiscordApi extends GloballyAttachableListenerManager {
     CompletableFuture<Webhook> getWebhookById(long id);
 
     /**
+     * Gets an incoming webhook by its id and its token.
+     *
+     * @param id The id of the incoming webhook.
+     * @param token The token of the incoming webhook.
+     * @return The incoming webhook with the given id.
+     */
+    CompletableFuture<IncomingWebhook> getIncomingWebhookByIdAndToken(String id, String token);
+
+    /**
+     * Gets an incoming webhook by its id and its token.
+     *
+     * @param id The id of the incoming webhook.
+     * @param token The token of the incoming webhook.
+     * @return The incoming webhook with the given id.
+     */
+    default CompletableFuture<IncomingWebhook> getIncomingWebhookByIdAndToken(long id, String token) {
+        return getIncomingWebhookByIdAndToken(Long.toUnsignedString(id), token);
+    }
+
+    /**
+     * Gets a webhook by its url.
+     *
+     * @param url The url of the message.
+     * @return The incoming webhook with the given url.
+     * @throws IllegalArgumentException If the link isn't valid.
+     */
+    default CompletableFuture<IncomingWebhook> getIncomingWebhookByUrl(String url) throws IllegalArgumentException {
+        Matcher matcher = DiscordRegexPattern.WEBHOOK_URL.matcher(url);
+
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException("The webhook url has an invalid format");
+        }
+
+        return getIncomingWebhookByIdAndToken(matcher.group("id"), matcher.group("token"));
+    }
+
+    /**
      * Gets a collection with the ids of all unavailable servers.
      *
      * @return A collection with the ids of all unavailable servers.
@@ -642,6 +697,86 @@ public interface DiscordApi extends GloballyAttachableListenerManager {
         } catch (NumberFormatException e) {
             return getUserById(-1);
         }
+    }
+
+    /**
+     * Gets the readable content of the string, which replaces all mentions etc. with the actual name.
+     * The replacement happens as following:
+     * <ul>
+     * <li><b>User mentions</b>:
+     * <code>@nickname</code> if the user has a nickname, <code>@name</code> if the user has no nickname, unchanged if
+     * the user is not in the cache.
+     * <li><b>Role mentions</b>:
+     * <code>@name</code> if the role exists in the server, otherwise <code>#deleted-role</code>
+     * <li><b>Channel mentions</b>:
+     * <code>#name</code> if the text channel exists in the server, otherwise <code>#deleted-channel</code>
+     * <li><b>Custom emoji</b>:
+     * <code>:name:</code>. If the emoji is known, the real name is used, otherwise the name from the mention tag.
+     * </ul>
+     *
+     * @param content The string to strip the mentions away.
+     * @param server The server to get the display name of users from.
+     *
+     * @return The readable content of the string.
+     */
+    default String makeMentionsReadable(String content, Server server) {
+        Matcher userMention = DiscordRegexPattern.USER_MENTION.matcher(content);
+        while (userMention.find()) {
+            String userId = userMention.group("id");
+            Optional<User> userOptional = getCachedUserById(userId);
+            if (userOptional.isPresent()) {
+                User user = userOptional.get();
+                String userName = server == null ? user.getName() : server.getDisplayName(user);
+                content = userMention.replaceFirst(Matcher.quoteReplacement("@" + userName));
+                userMention.reset(content);
+            }
+        }
+        Matcher roleMention = DiscordRegexPattern.ROLE_MENTION.matcher(content);
+        while (roleMention.find()) {
+            String roleName = getRoleById(roleMention.group("id")).map(Role::getName).orElse("deleted-role");
+            content = roleMention.replaceFirst(Matcher.quoteReplacement("@" + roleName));
+            roleMention.reset(content);
+        }
+        Matcher channelMention = DiscordRegexPattern.CHANNEL_MENTION.matcher(content);
+        while (channelMention.find()) {
+            String channelId = channelMention.group("id");
+            String channelName = getServerChannelById(channelId).map(ServerChannel::getName).orElse("deleted-channel");
+            content = channelMention.replaceFirst("#" + channelName);
+            channelMention.reset(content);
+        }
+        Matcher customEmoji = DiscordRegexPattern.CUSTOM_EMOJI.matcher(content);
+        while (customEmoji.find()) {
+            String emojiId = customEmoji.group("id");
+            String name = getCustomEmojiById(emojiId)
+                    .map(CustomEmoji::getName)
+                    .orElseGet(() -> customEmoji.group("name"));
+            content = customEmoji.replaceFirst(":" + name + ":");
+            customEmoji.reset(content);
+        }
+        return ESCAPED_CHARACTER.matcher(content).replaceAll("${char}");
+    }
+
+    /**
+     * Gets the readable content of the string, which replaces all mentions etc. with the actual name.
+     * The replacement happens as following:
+     * <ul>
+     * <li><b>User mentions</b>:
+     * <code>@nickname</code> if the user has a nickname, <code>@name</code> if the user has no nickname, unchanged if
+     * the user is not in the cache.
+     * <li><b>Role mentions</b>:
+     * <code>@name</code> if the role exists in the server, otherwise <code>#deleted-role</code>
+     * <li><b>Channel mentions</b>:
+     * <code>#name</code> if the text channel exists in the server, otherwise <code>#deleted-channel</code>
+     * <li><b>Custom emoji</b>:
+     * <code>:name:</code>. If the emoji is known, the real name is used, otherwise the name from the mention tag.
+     * </ul>
+     *
+     * @param content The string to strip the mentions away.
+     *
+     * @return The readable content of the string.
+     */
+    default String makeMentionsReadable(String content) {
+        return makeMentionsReadable(content, null);
     }
 
     /**
@@ -1110,6 +1245,13 @@ public interface DiscordApi extends GloballyAttachableListenerManager {
     Collection<ServerVoiceChannel> getServerVoiceChannels();
 
     /**
+     * Gets a collection with all server stage voice channels of the bot.
+     *
+     * @return A collection with all server stage voice channels of the bot.
+     */
+    Collection<ServerStageVoiceChannel> getServerStageVoiceChannels();
+
+    /**
      * Gets a collection with all text channels of the bot.
      *
      * @return A collection with all text channels of the bot.
@@ -1481,6 +1623,58 @@ public interface DiscordApi extends GloballyAttachableListenerManager {
     default Collection<ServerVoiceChannel> getServerVoiceChannelsByNameIgnoreCase(String name) {
         return Collections.unmodifiableList(
                 getServerVoiceChannels().stream()
+                        .filter(channel -> channel.getName().equalsIgnoreCase(name))
+                        .collect(Collectors.toList()));
+    }
+
+    /**
+     * Gets a server stage voice channel by its id.
+     *
+     * @param id The id of the server stage voice channel.
+     * @return The server stage voice channel with the given id.
+     */
+    default Optional<ServerStageVoiceChannel> getServerStageVoiceChannelById(long id) {
+        return getChannelById(id).flatMap(Channel::asServerStageVoiceChannel);
+    }
+
+    /**
+     * Gets a server stage voice channel by its id.
+     *
+     * @param id The id of the server stage voice channel.
+     * @return The server stage voice channel with the given id.
+     */
+    default Optional<ServerStageVoiceChannel> getServerStageVoiceChannelById(String id) {
+        try {
+            return getServerStageVoiceChannelById(Long.parseLong(id));
+        } catch (NumberFormatException e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Gets a collection with all server stage voice channels with the given name.
+     * This method is case sensitive!
+     *
+     * @param name The name of the server stage voice channels.
+     * @return A collection with all server stage voice channels with the given name.
+     */
+    default Collection<ServerStageVoiceChannel> getServerStageVoiceChannelsByName(String name) {
+        return Collections.unmodifiableList(
+                getServerStageVoiceChannels().stream()
+                        .filter(channel -> channel.getName().equals(name))
+                        .collect(Collectors.toList()));
+    }
+
+    /**
+     * Gets a collection with all server stage voice channels with the given name.
+     * This method is case insensitive!
+     *
+     * @param name The name of the server stage voice channels.
+     * @return A collection with all server stage voice channels with the given name.
+     */
+    default Collection<ServerStageVoiceChannel> getServerStageVoiceChannelsByNameIgnoreCase(String name) {
+        return Collections.unmodifiableList(
+                getServerStageVoiceChannels().stream()
                         .filter(channel -> channel.getName().equalsIgnoreCase(name))
                         .collect(Collectors.toList()));
     }

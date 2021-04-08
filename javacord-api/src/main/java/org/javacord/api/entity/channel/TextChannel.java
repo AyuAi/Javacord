@@ -6,6 +6,7 @@ import org.javacord.api.entity.message.MessageSet;
 import org.javacord.api.entity.message.Messageable;
 import org.javacord.api.entity.permission.PermissionType;
 import org.javacord.api.entity.user.User;
+import org.javacord.api.entity.webhook.IncomingWebhook;
 import org.javacord.api.entity.webhook.Webhook;
 import org.javacord.api.listener.channel.TextChannelAttachableListenerManager;
 import org.javacord.api.listener.message.MessageCreateListener;
@@ -840,6 +841,13 @@ public interface TextChannel extends Channel, Messageable, TextChannelAttachable
     CompletableFuture<List<Webhook>> getWebhooks();
 
     /**
+     * Gets a list of all incoming webhooks in this channel.
+     *
+     * @return A list of all incoming webhooks in this channel.
+     */
+    CompletableFuture<List<IncomingWebhook>> getIncomingWebhooks();
+
+    /**
      * Checks if the given user can send messages in this channel.
      * In private chats (private channel or group channel) this always returns <code>true</code> if the user is
      * part of the chat.
@@ -851,7 +859,8 @@ public interface TextChannel extends Channel, Messageable, TextChannelAttachable
     default boolean canWrite(User user) {
         Optional<PrivateChannel> privateChannel = asPrivateChannel();
         if (privateChannel.isPresent()) {
-            return user.isYourself() || privateChannel.get().getRecipient() == user;
+            return user.isYourself() || privateChannel.get().getRecipient()
+                    .map(recipient -> recipient.equals(user)).orElse(false);
         }
         Optional<GroupChannel> groupChannel = asGroupChannel();
         if (groupChannel.isPresent()) {
@@ -1013,7 +1022,8 @@ public interface TextChannel extends Channel, Messageable, TextChannelAttachable
     default boolean canAttachFiles(User user) {
         Optional<PrivateChannel> privateChannel = asPrivateChannel();
         if (privateChannel.isPresent()) {
-            return user.isYourself() || privateChannel.get().getRecipient() == user;
+            return user.isYourself() || privateChannel.get().getRecipient()
+                    .map(recipient -> recipient.equals(user)).orElse(false);
         }
         Optional<GroupChannel> groupChannel = asGroupChannel();
         if (groupChannel.isPresent()) {
@@ -1044,7 +1054,8 @@ public interface TextChannel extends Channel, Messageable, TextChannelAttachable
     default boolean canAddNewReactions(User user) {
         Optional<PrivateChannel> privateChannel = asPrivateChannel();
         if (privateChannel.isPresent()) {
-            return user.isYourself() || privateChannel.get().getRecipient() == user;
+            return user.isYourself() || privateChannel.get().getRecipient()
+                    .map(recipient -> recipient.equals(user)).orElse(false);
         }
         Optional<GroupChannel> groupChannel = asGroupChannel();
         if (groupChannel.isPresent()) {

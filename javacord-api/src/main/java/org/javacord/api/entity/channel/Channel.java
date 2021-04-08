@@ -88,6 +88,15 @@ public interface Channel extends DiscordEntity, UpdatableFromCache, ChannelAttac
     }
 
     /**
+     * Gets the channel as server stage voice channel.
+     *
+     * @return The channel as server stage voice channel.
+     */
+    default Optional<ServerStageVoiceChannel> asServerStageVoiceChannel() {
+        return as(ServerStageVoiceChannel.class);
+    }
+
+    /**
      * Gets the channel as text channel.
      *
      * @return The channel as text channel.
@@ -117,7 +126,8 @@ public interface Channel extends DiscordEntity, UpdatableFromCache, ChannelAttac
     default boolean canSee(User user) {
         Optional<PrivateChannel> privateChannel = asPrivateChannel();
         if (privateChannel.isPresent()) {
-            return user.isYourself() || privateChannel.get().getRecipient() == user;
+            return user.isYourself() || privateChannel.get().getRecipient()
+                    .map(recipient -> recipient.equals(user)).orElse(false);
         }
         Optional<GroupChannel> groupChannel = asGroupChannel();
         if (groupChannel.isPresent()) {

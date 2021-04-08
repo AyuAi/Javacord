@@ -13,6 +13,7 @@ import org.javacord.api.entity.auditlog.AuditLogEntry;
 import org.javacord.api.entity.channel.ChannelCategory;
 import org.javacord.api.entity.channel.ChannelCategoryBuilder;
 import org.javacord.api.entity.channel.ServerChannel;
+import org.javacord.api.entity.channel.ServerStageVoiceChannel;
 import org.javacord.api.entity.channel.ServerTextChannel;
 import org.javacord.api.entity.channel.ServerTextChannelBuilder;
 import org.javacord.api.entity.channel.ServerVoiceChannel;
@@ -27,6 +28,7 @@ import org.javacord.api.entity.permission.Role;
 import org.javacord.api.entity.permission.RoleBuilder;
 import org.javacord.api.entity.server.invite.RichInvite;
 import org.javacord.api.entity.user.User;
+import org.javacord.api.entity.webhook.IncomingWebhook;
 import org.javacord.api.entity.webhook.Webhook;
 import org.javacord.api.listener.server.ServerAttachableListenerManager;
 
@@ -1817,7 +1819,7 @@ public interface Server extends DiscordEntity, Nameable, UpdatableFromCache<Serv
      * @return A future to check if the ban was successful.
      */
     default CompletableFuture<Void> banUser(User user) {
-        return banUser(user, 0, null);
+        return banUser(user.getId(), 0, null);
     }
 
     /**
@@ -1828,7 +1830,7 @@ public interface Server extends DiscordEntity, Nameable, UpdatableFromCache<Serv
      * @return A future to check if the ban was successful.
      */
     default CompletableFuture<Void> banUser(User user, int deleteMessageDays) {
-        return banUser(user, deleteMessageDays, null);
+        return banUser(user.getId(), deleteMessageDays, null);
     }
 
     /**
@@ -1839,7 +1841,73 @@ public interface Server extends DiscordEntity, Nameable, UpdatableFromCache<Serv
      * @param reason The reason for the ban.
      * @return A future to check if the ban was successful.
      */
-    CompletableFuture<Void> banUser(User user, int deleteMessageDays, String reason);
+    default CompletableFuture<Void> banUser(User user, int deleteMessageDays, String reason) {
+        return banUser(user.getId(), deleteMessageDays, reason);
+    }
+
+    /**
+     * Bans the given user from the server.
+     *
+     * @param userId The id of the user to ban.
+     * @return A future to check if the ban was successful.
+     */
+    default CompletableFuture<Void> banUser(String userId) {
+        return banUser(userId, 0, null);
+    }
+
+    /**
+     * Bans the given user from the server.
+     *
+     * @param userId The id of the user to ban.
+     * @return A future to check if the ban was successful.
+     */
+    default CompletableFuture<Void> banUser(long userId) {
+        return banUser(Long.toUnsignedString(userId));
+    }
+
+    /**
+     * Bans the given user from the server.
+     *
+     * @param userId The id of the user to ban.
+     * @param deleteMessageDays The number of days to delete messages for (0-7).
+     * @return A future to check if the ban was successful.
+     */
+    default CompletableFuture<Void> banUser(String userId, int deleteMessageDays) {
+        return banUser(userId, deleteMessageDays, null);
+    }
+
+    /**
+     * Bans the given user from the server.
+     *
+     * @param userId The id of the user to ban.
+     * @param deleteMessageDays The number of days to delete messages for (0-7).
+     * @return A future to check if the ban was successful.
+     */
+    default CompletableFuture<Void> banUser(long userId, int deleteMessageDays) {
+        return banUser(Long.toUnsignedString(userId), deleteMessageDays);
+    }
+
+    /**
+     * Bans the given user from the server.
+     *
+     * @param userId The id of the user to ban.
+     * @param deleteMessageDays The number of days to delete messages for (0-7).
+     * @param reason The reason for the ban.
+     * @return A future to check if the ban was successful.
+     */
+    CompletableFuture<Void> banUser(String userId, int deleteMessageDays, String reason);
+
+    /**
+     * Bans the given user from the server.
+     *
+     * @param userId The id of the user to ban.
+     * @param deleteMessageDays The number of days to delete messages for (0-7).
+     * @param reason The reason for the ban.
+     * @return A future to check if the ban was successful.
+     */
+    default CompletableFuture<Void> banUser(long userId, int deleteMessageDays, String reason) {
+        return banUser(Long.toUnsignedString(userId), deleteMessageDays, reason);
+    }
 
     /**
      * Unbans the given user from the server.
@@ -1921,6 +1989,13 @@ public interface Server extends DiscordEntity, Nameable, UpdatableFromCache<Serv
      * @return A list of all webhooks in this server.
      */
     CompletableFuture<List<Webhook>> getWebhooks();
+
+    /**
+     * Gets a list of all incoming webhooks in this server.
+     *
+     * @return A list of all incoming webhooks in this server.
+     */
+    CompletableFuture<List<IncomingWebhook>> getIncomingWebhooks();
 
     /**
      * Gets the audit log of this server.
@@ -2275,6 +2350,32 @@ public interface Server extends DiscordEntity, Nameable, UpdatableFromCache<Serv
     default Optional<ServerVoiceChannel> getVoiceChannelById(String id) {
         try {
             return getVoiceChannelById(Long.parseLong(id));
+        } catch (NumberFormatException e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Gets a stage voice channel by its id.
+     *
+     * @param id The id of the stage voice channel.
+     * @return The stage voice channel with the given id.
+     */
+    default Optional<ServerStageVoiceChannel> getStageVoiceChannelById(long id) {
+        return getChannelById(id)
+                .filter(channel -> channel instanceof ServerStageVoiceChannel)
+                .map(channel -> (ServerStageVoiceChannel) channel);
+    }
+
+    /**
+     * Gets a voice channel by its id.
+     *
+     * @param id The id of the voice channel.
+     * @return The voice channel with the given id.
+     */
+    default Optional<ServerStageVoiceChannel> getStageVoiceChannelById(String id) {
+        try {
+            return getStageVoiceChannelById(Long.parseLong(id));
         } catch (NumberFormatException e) {
             return Optional.empty();
         }

@@ -9,6 +9,8 @@ import org.javacord.api.entity.server.Server;
 import org.javacord.api.entity.user.User;
 import org.javacord.core.DiscordApiImpl;
 import org.javacord.core.entity.server.ServerImpl;
+import org.javacord.core.entity.user.Member;
+import org.javacord.core.entity.user.UserImpl;
 import org.javacord.core.listener.server.role.InternalRoleAttachableListenerManager;
 import org.javacord.core.util.rest.RestEndpoint;
 import org.javacord.core.util.rest.RestMethod;
@@ -17,12 +19,9 @@ import org.javacord.core.util.rest.RestRequest;
 import java.awt.Color;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
 /**
@@ -85,21 +84,11 @@ public class RoleImpl implements Role, InternalRoleAttachableListenerManager {
     private final boolean managed;
 
     /**
-     * A collection with all users with this role.
-     */
-    private final Collection<Long> userIds = new HashSet<>();
-
-    /**
-     * A read write lock to synchronize access to the users HashSet.
-     */
-    private final ReadWriteLock userHashSetLock = new ReentrantReadWriteLock();
-
-    /**
      * Creates a new role object.
      *
-     * @param api The discord api instance.
+     * @param api    The discord api instance.
      * @param server The server of the role.
-     * @param data The json data of the role.
+     * @param data   The json data of the role.
      */
     public RoleImpl(DiscordApiImpl api, ServerImpl server, JsonNode data) {
         this.api = api;
@@ -110,36 +99,8 @@ public class RoleImpl implements Role, InternalRoleAttachableListenerManager {
         this.color = data.get("color").asInt(0);
         this.hoist = data.get("hoist").asBoolean(false);
         this.mentionable = data.get("mentionable").asBoolean(false);
-        this.permissions = new PermissionsImpl(data.get("permissions").asInt(), 0);
+        this.permissions = new PermissionsImpl(data.get("permissions").asLong(), 0);
         this.managed = data.get("managed").asBoolean(false);
-    }
-
-    /**
-     * Adds a user to the role.
-     *
-     * @param userId The id of the user to add.
-     */
-    public void addUserToCache(long userId) {
-        userHashSetLock.writeLock().lock();
-        try {
-            userIds.add(userId);
-        } finally {
-            userHashSetLock.writeLock().unlock();
-        }
-    }
-
-    /**
-     * Removes a user from the role.
-     *
-     * @param userId The id of the user to remove.
-     */
-    public void removeUserFromCache(long userId) {
-        userHashSetLock.writeLock().lock();
-        try {
-            userIds.remove(userId);
-        } finally {
-            userHashSetLock.writeLock().unlock();
-        }
     }
 
     /**
@@ -251,20 +212,22 @@ public class RoleImpl implements Role, InternalRoleAttachableListenerManager {
             return getServer().getMembers();
         }
 
-        userHashSetLock.readLock().lock();
-        try {
-            // TODO Improve performance
-            return getServer().getMembers().stream()
-                    .filter(member -> userIds.contains(member.getId()))
-                    .collect(Collectors.toSet());
-        } finally {
-            userHashSetLock.readLock().unlock();
-        }
+        return server.getRealMembers().stream()
+                .filter(member -> member.hasRole(this))
+                .map(Member::getUser)
+                .collect(Collectors.toSet());
     }
 
     @Override
     public boolean hasUser(User user) {
-        return userIds.contains(user.getId());
+        return ((UserImpl) user).getMember()
+                .filter(member -> member.getServer().equals(server))
+                .map(Member.class::cast)
+                // TODO Replace with Optional#or when we upgrade to Java 9+
+                .map(Optional::of)
+                .orElseGet(() -> server.getRealMemberById(user.getId()))
+                .map(member -> member.hasRole(this))
+                .orElse(false);
     }
 
     @Override

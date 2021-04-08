@@ -19,6 +19,7 @@ import org.javacord.api.entity.auditlog.AuditLogEntry;
 import org.javacord.api.entity.channel.ChannelCategory;
 import org.javacord.api.entity.channel.ChannelType;
 import org.javacord.api.entity.channel.ServerChannel;
+import org.javacord.api.entity.channel.ServerStageVoiceChannel;
 import org.javacord.api.entity.channel.ServerTextChannel;
 import org.javacord.api.entity.channel.ServerVoiceChannel;
 import org.javacord.api.entity.emoji.KnownCustomEmoji;
@@ -35,7 +36,9 @@ import org.javacord.api.entity.server.VerificationLevel;
 import org.javacord.api.entity.server.invite.RichInvite;
 import org.javacord.api.entity.user.User;
 import org.javacord.api.entity.user.UserStatus;
+import org.javacord.api.entity.webhook.IncomingWebhook;
 import org.javacord.api.entity.webhook.Webhook;
+import org.javacord.api.entity.webhook.WebhookType;
 import org.javacord.core.DiscordApiImpl;
 import org.javacord.core.audio.AudioConnectionImpl;
 import org.javacord.core.entity.IconImpl;
@@ -44,6 +47,7 @@ import org.javacord.core.entity.activity.ActivityImpl;
 import org.javacord.core.entity.auditlog.AuditLogImpl;
 import org.javacord.core.entity.channel.ChannelCategoryImpl;
 import org.javacord.core.entity.channel.ServerChannelImpl;
+import org.javacord.core.entity.channel.ServerStageVoiceChannelImpl;
 import org.javacord.core.entity.channel.ServerTextChannelImpl;
 import org.javacord.core.entity.channel.ServerVoiceChannelImpl;
 import org.javacord.core.entity.permission.RoleImpl;
@@ -51,6 +55,7 @@ import org.javacord.core.entity.server.invite.InviteImpl;
 import org.javacord.core.entity.user.Member;
 import org.javacord.core.entity.user.MemberImpl;
 import org.javacord.core.entity.user.UserImpl;
+import org.javacord.core.entity.webhook.IncomingWebhookImpl;
 import org.javacord.core.entity.webhook.WebhookImpl;
 import org.javacord.core.listener.server.InternalServerAttachableListenerManager;
 import org.javacord.core.util.Cleanupable;
@@ -334,12 +339,16 @@ public class ServerImpl implements Server, Cleanupable, InternalServerAttachable
 
         if (data.has("channels")) {
             for (JsonNode channel : data.get("channels")) {
+
                 switch (ChannelType.fromId(channel.get("type").asInt())) {
                     case SERVER_TEXT_CHANNEL:
                         getOrCreateServerTextChannel(channel);
                         break;
                     case SERVER_VOICE_CHANNEL:
                         getOrCreateServerVoiceChannel(channel);
+                        break;
+                    case SERVER_STAGE_VOICE_CHANNEL:
+                        getOrCreateServerStageVoiceChannel(channel);
                         break;
                     case CHANNEL_CATEGORY:
                         getOrCreateChannelCategory(channel);
@@ -411,14 +420,14 @@ public class ServerImpl implements Server, Cleanupable, InternalServerAttachable
                     continue;
                 }
 
-                if (presenceJson.has("game")) {
-                    Activity activity;
-                    if (!presenceJson.get("game").isNull()) {
-                        activity = new ActivityImpl(api, presenceJson.get("game"));
-                    } else {
-                        activity = null;
+                if (presenceJson.hasNonNull("activities")) {
+                    Set<Activity> activities = new HashSet<>();
+                    for (JsonNode activityJson : presenceJson.get("activities")) {
+                        if (!activityJson.isNull()) {
+                            activities.add(new ActivityImpl(api, activityJson));
+                        }
                     }
-                    api.updateUserPresence(userId, presence -> presence.setActivity(activity));
+                    api.updateUserPresence(userId, presence -> presence.setActivities(activities));
                 }
                 if (presenceJson.has("status")) {
                     UserStatus status = UserStatus.fromString(presenceJson.get("status").asText());
@@ -721,6 +730,24 @@ public class ServerImpl implements Server, Cleanupable, InternalServerAttachable
     }
 
     /**
+     * Gets or creates a server stage voice channel.
+     *
+     * @param data The json data of the channel.
+     * @return The server stage voice channel.
+     */
+    public ServerStageVoiceChannel getOrCreateServerStageVoiceChannel(JsonNode data) {
+        long id = Long.parseLong(data.get("id").asText());
+        ChannelType type = ChannelType.fromId(data.get("type").asInt());
+        synchronized (this) {
+            if (type == ChannelType.SERVER_STAGE_VOICE_CHANNEL) {
+                return getStageVoiceChannelById(id).orElseGet(() -> new ServerStageVoiceChannelImpl(api, this, data));
+            }
+        }
+        // Invalid channel type
+        return null;
+    }
+
+    /**
      * Removes a member from the server.
      *
      * @param userId The id of the user to remove.
@@ -728,7 +755,6 @@ public class ServerImpl implements Server, Cleanupable, InternalServerAttachable
     public void removeMember(long userId) {
         muted.remove(userId);
         deafened.remove(userId);
-        getRoles().forEach(role -> ((RoleImpl) role).removeUserFromCache(userId));
         api.removeMemberFromCache(userId, getId());
     }
 
@@ -748,11 +774,6 @@ public class ServerImpl implements Server, Cleanupable, InternalServerAttachable
     public MemberImpl addMember(JsonNode memberJson) {
         MemberImpl member = new MemberImpl(api, this, memberJson, null);
         api.addMemberToCacheOrReplaceExisting(member);
-
-        for (JsonNode roleIds : memberJson.get("roles")) {
-            long roleId = Long.parseLong(roleIds.asText());
-            getRoleById(roleId).map(role -> ((RoleImpl) role)).ifPresent(role -> role.addUserToCache(member.getId()));
-        }
 
         synchronized (readyConsumers) {
             if (!ready && getRealMembers().size() == getMemberCount()) {
@@ -1274,12 +1295,12 @@ public class ServerImpl implements Server, Cleanupable, InternalServerAttachable
 
     @Override
     public List<Role> getRoles(User user) {
-        return getRealMemberById(user.getId())
-                .map(Member::getRoles).orElseGet(() -> {
-                    ArrayList<Role> list = new ArrayList<>();
-                    list.add(getEveryoneRole());
-                    return list;
-                });
+        return ((UserImpl) user).getMember()
+                .filter(member -> member.getServer().equals(this))
+                .map(Member::getRoles)
+                .orElseGet(() ->
+                        getRealMemberById(user.getId())
+                                .map(Member::getRoles).orElseGet(Collections::emptyList));
     }
 
     @Override
@@ -1367,10 +1388,10 @@ public class ServerImpl implements Server, Cleanupable, InternalServerAttachable
     }
 
     @Override
-    public CompletableFuture<Void> banUser(User user, int deleteMessageDays, String reason) {
+    public CompletableFuture<Void> banUser(String userId, int deleteMessageDays, String reason) {
         RestRequest<Void> request = new RestRequest<Void>(getApi(), RestMethod.PUT, RestEndpoint.BAN)
-                .setUrlParameters(getIdAsString(), user.getIdAsString())
-                .addQueryParameter("delete-message-days", String.valueOf(deleteMessageDays));
+                .setUrlParameters(getIdAsString(), userId)
+                .addQueryParameter("delete_message_days", String.valueOf(deleteMessageDays));
         if (reason != null) {
             request.addQueryParameter("reason", reason);
         }
@@ -1405,7 +1426,22 @@ public class ServerImpl implements Server, Cleanupable, InternalServerAttachable
                 .execute(result -> {
                     List<Webhook> webhooks = new ArrayList<>();
                     for (JsonNode webhookJson : result.getJsonBody()) {
-                        webhooks.add(new WebhookImpl(getApi(), webhookJson));
+                        webhooks.add(WebhookImpl.createWebhook(getApi(), webhookJson));
+                    }
+                    return Collections.unmodifiableList(webhooks);
+                });
+    }
+
+    @Override
+    public CompletableFuture<List<IncomingWebhook>> getIncomingWebhooks() {
+        return new RestRequest<List<IncomingWebhook>>(getApi(), RestMethod.GET, RestEndpoint.SERVER_WEBHOOK)
+                .setUrlParameters(getIdAsString())
+                .execute(result -> {
+                    List<IncomingWebhook> webhooks = new ArrayList<>();
+                    for (JsonNode webhookJson : result.getJsonBody()) {
+                        if (WebhookType.fromValue(webhookJson.get("type").asInt()) == WebhookType.INCOMING) {
+                            webhooks.add(new IncomingWebhookImpl(getApi(), webhookJson));
+                        }
                     }
                     return Collections.unmodifiableList(webhooks);
                 });
