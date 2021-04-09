@@ -54,6 +54,16 @@ public class UserImpl implements User, InternalUserAttachableListenerManager {
     private final MemberImpl member;
 
     /**
+     * Creates a new user instance from the given UserImpl object.
+     *
+     * @param api A discord api instance.
+     * @param user The user object to extract the info from.
+     */
+    public UserImpl(DiscordApiImpl api, UserImpl user) {
+        this(api, user.id, user.name, user.discriminator, user.avatarHash, user.bot, user.member);
+    }
+
+    /**
      * Creates a new user instance.
      *
      * @param api A discord api instance.

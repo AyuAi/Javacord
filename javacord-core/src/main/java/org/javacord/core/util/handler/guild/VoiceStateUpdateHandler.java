@@ -105,7 +105,50 @@ public class VoiceStateUpdateHandler extends PacketHandler {
     private void handleServerVoiceChannel(JsonNode packet, long userId) {
         api.getPossiblyUnreadyServerById(packet.get("guild_id").asLong())
                 .map(ServerImpl.class::cast).ifPresent(server -> {
-                    Member member = new MemberImpl(api, server, packet.get("member"), null);
+
+                    // We grab the old states prior to replacing the Member in the cache since we pull
+                    // the old states from the cache.
+                    boolean newSelfMuted = packet.get("self_mute").asBoolean();
+                    boolean oldSelfMuted = server.isSelfMuted(userId);
+                    boolean newSelfDeafened = packet.get("self_deaf").asBoolean();
+                    boolean oldSelfDeafened = server.isSelfDeafened(userId);
+                    boolean newMuted = packet.get("mute").asBoolean();
+                    boolean oldMuted = server.isMuted(userId);
+                    boolean newDeafened = packet.get("deaf").asBoolean();
+                    boolean oldDeafened = server.isDeafened(userId);
+
+                    MemberImpl newMember;
+                    Member oldMember = server.getRealMemberById(packet.get("user_id").asLong()).orElse(null);
+
+                    if (packet.hasNonNull("member")) {
+                        newMember = new MemberImpl(api, server, packet.get("member"), null)
+                                .setMuted(newMuted)
+                                .setDeafened(newDeafened)
+                                .setSelfMuted(newSelfMuted)
+                                .setSelfDeafened(newSelfDeafened);
+                    } else {
+                        // Check the cache first to see if we can update an existing Member object
+                        Member member = server.getRealMemberById(packet.get("user_id").asLong()).orElse(null);
+                        if (member == null) {
+                            // If there is no member in the cache and we don't receive a member field,
+                            // we will log it and return. I'm actually not sure if this is normal behavior;
+                            // Maybe the logging should be removed if it is, but the data being lost (non-cacheable)
+                            // is still notable.
+                            logger.warn("Received VOICE_STATE_UPDATE packet without "
+                                    + "member field or member in the cache: {}", packet);
+                            return;
+                        }
+                        // If there is a member in the cache, we will update based off of it.
+                        newMember = new MemberImpl(api, server, (MemberImpl) member)
+                                .setMuted(newMuted)
+                                .setDeafened(newDeafened)
+                                .setSelfMuted(newSelfMuted)
+                                .setSelfDeafened(newSelfDeafened);
+                    }
+
+                    // Update the cache with the new member prior to dispatching any events.
+                    api.addMemberToCacheOrReplaceExisting(newMember);
+
                     Optional<ServerVoiceChannelImpl> oldChannel = server
                             .getConnectedVoiceChannel(userId)
                             .map(ServerVoiceChannelImpl.class::cast);
@@ -123,32 +166,22 @@ public class VoiceStateUpdateHandler extends PacketHandler {
                         oldChannel.ifPresent(channel -> {
                             channel.removeConnectedUser(userId);
                             dispatchServerVoiceChannelMemberLeaveEvent(
-                                    member, newChannel.orElse(null), channel, server);
+                                    newMember, newChannel.orElse(null), channel, server);
                         });
 
                         newChannel.ifPresent(channel -> {
                             channel.addConnectedUser(userId);
-                            dispatchServerVoiceChannelMemberJoinEvent(member, channel, oldChannel.orElse(null), server);
+                            dispatchServerVoiceChannelMemberJoinEvent(newMember, channel, oldChannel.orElse(null),
+                                    server);
                         });
                     }
 
-                    if (!packet.hasNonNull("member")) {
-                        logger.warn("Received VOICE_STATE_UPDATE packet without non-null member field: {}", packet);
-                        return;
-                    }
-                    MemberImpl newMember = new MemberImpl(api, server, packet.get("member"), null);
-                    Member oldMember = server.getRealMemberById(packet.get("user_id").asLong()).orElse(null);
-
-                    boolean newSelfMuted = packet.get("self_mute").asBoolean();
-                    boolean oldSelfMuted = server.isSelfMuted(userId);
                     if (newSelfMuted != oldSelfMuted) {
                         UserChangeSelfMutedEventImpl event = new UserChangeSelfMutedEventImpl(newMember, oldMember);
                         api.getEventDispatcher()
                                 .dispatchUserChangeSelfMutedEvent(server, server, newMember.getUser(), event);
                     }
 
-                    boolean newSelfDeafened = packet.get("self_deaf").asBoolean();
-                    boolean oldSelfDeafened = server.isSelfDeafened(userId);
                     if (newSelfDeafened != oldSelfDeafened) {
                         UserChangeSelfDeafenedEventImpl event = new UserChangeSelfDeafenedEventImpl(
                                 newMember, oldMember);
@@ -156,19 +189,13 @@ public class VoiceStateUpdateHandler extends PacketHandler {
                                 .dispatchUserChangeSelfDeafenedEvent(server, server, newMember.getUser(), event);
                     }
 
-                    boolean newMuted = packet.get("mute").asBoolean();
-                    boolean oldMuted = server.isMuted(userId);
                     if (newMuted != oldMuted) {
-                        server.setMuted(userId, newMuted);
                         UserChangeMutedEventImpl event = new UserChangeMutedEventImpl(newMember, oldMember);
                         api.getEventDispatcher()
                                 .dispatchUserChangeMutedEvent(server, server, newMember.getUser(), event);
                     }
 
-                    boolean newDeafened = packet.get("deaf").asBoolean();
-                    boolean oldDeafened = server.isDeafened(userId);
                     if (newDeafened != oldDeafened) {
-                        server.setDeafened(userId, newDeafened);
                         UserChangeDeafenedEventImpl event = new UserChangeDeafenedEventImpl(newMember, oldMember);
                         api.getEventDispatcher()
                                 .dispatchUserChangeDeafenedEvent(server, server, newMember.getUser(), event);
