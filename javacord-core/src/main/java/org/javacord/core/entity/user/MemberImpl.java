@@ -72,13 +72,13 @@ public final class MemberImpl implements Member {
             serverBoostingSince = null;
         }
 
-        if (data.hasNonNull("deaf")) {
-            selfDeafened = data.get("deaf").asBoolean();
+        if (data.hasNonNull("self_deaf")) {
+            selfDeafened = data.get("self_deaf").asBoolean();
         } else {
             selfDeafened = false;
         }
-        if (data.hasNonNull("mute")) {
-            selfMuted = data.get("mute").asBoolean();
+        if (data.hasNonNull("self_mute")) {
+            selfMuted = data.get("self_mute").asBoolean();
         } else {
             selfMuted = false;
         }

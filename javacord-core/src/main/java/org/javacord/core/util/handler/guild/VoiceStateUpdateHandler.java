@@ -139,6 +139,8 @@ public class VoiceStateUpdateHandler extends PacketHandler {
                     MemberImpl newMember = new MemberImpl(api, server, packet.get("member"), null);
                     Member oldMember = server.getRealMemberById(packet.get("user_id").asLong()).orElse(null);
 
+                    api.addMemberToCacheOrReplaceExisting(newMember);
+
                     boolean newSelfMuted = packet.get("self_mute").asBoolean();
                     boolean oldSelfMuted = server.isSelfMuted(userId);
                     if (newSelfMuted != oldSelfMuted) {
