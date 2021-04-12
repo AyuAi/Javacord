@@ -133,7 +133,7 @@ public class RatelimitManager {
                 } finally {
                     try {
                         // Calculate offset
-                        calculateOffset(responseTimestamp, result);
+                        //calculateOffset(responseTimestamp, result);
                         // Handle the response
                         handleResponse(currentRequest, result, bucket, responseTimestamp);
                     } catch (Throwable t) {
@@ -177,13 +177,12 @@ public class RatelimitManager {
         long reset = request
                 .getEndpoint()
                 .getHardcodedRatelimit()
-                .map(ratelimit -> responseTimestamp + api.getTimeOffset() + ratelimit)
+                .map(ratelimit -> responseTimestamp + ratelimit)
                 .orElseGet(() -> (long) (Double.parseDouble(response.header("X-RateLimit-Reset", "0")) * 1000));
 
         // Check if we received a 429 response
         if (result.getResponse().code() == 429) {
-            int retryAfter =
-                    result.getJsonBody().isNull() ? 0 : result.getJsonBody().get("retry_after").asInt();
+            long retryAfter = (long) (Double.parseDouble(response.header("retry-after")) * 1000);
 
             if (global) {
                 // We hit a global ratelimit. Time to panic!
@@ -218,7 +217,7 @@ public class RatelimitManager {
      * @param currentTime The current time.
      * @param result The result of the rest request.
      */
-    private void calculateOffset(long currentTime, RestRequestResult result) {
+    /*private void calculateOffset(long currentTime, RestRequestResult result) {
         // Double-checked locking for better performance
         if ((api.getTimeOffset() != null) || (result == null) || (result.getResponse() == null)) {
             return;
@@ -236,6 +235,6 @@ public class RatelimitManager {
                 }
             }
         }
-    }
+    }*/
 
 }
