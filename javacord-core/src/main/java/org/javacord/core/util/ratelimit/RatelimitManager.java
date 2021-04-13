@@ -9,8 +9,6 @@ import org.javacord.core.util.rest.RestRequest;
 import org.javacord.core.util.rest.RestRequestResponseInformationImpl;
 import org.javacord.core.util.rest.RestRequestResult;
 
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
