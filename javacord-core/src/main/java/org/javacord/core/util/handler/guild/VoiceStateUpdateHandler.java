@@ -117,34 +117,27 @@ public class VoiceStateUpdateHandler extends PacketHandler {
                     boolean newDeafened = packet.get("deaf").asBoolean();
                     boolean oldDeafened = server.isDeafened(userId);
 
-                    MemberImpl newMember;
-                    Member oldMember = server.getRealMemberById(packet.get("user_id").asLong()).orElse(null);
-
-                    if (packet.hasNonNull("member")) {
-                        newMember = new MemberImpl(api, server, packet.get("member"), null)
-                                .setMuted(newMuted)
-                                .setDeafened(newDeafened)
-                                .setSelfMuted(newSelfMuted)
-                                .setSelfDeafened(newSelfDeafened);
-                    } else {
-                        // Check the cache first to see if we can update an existing Member object
-                        Member member = server.getRealMemberById(packet.get("user_id").asLong()).orElse(null);
-                        if (member == null) {
-                            // If there is no member in the cache and we don't receive a member field,
-                            // we will log it and return. I'm actually not sure if this is normal behavior;
-                            // Maybe the logging should be removed if it is, but the data being lost (non-cacheable)
-                            // is still notable.
-                            logger.warn("Received VOICE_STATE_UPDATE packet without "
-                                    + "member field or member in the cache: {}", packet);
-                            return;
-                        }
-                        // If there is a member in the cache, we will update based off of it.
-                        newMember = new MemberImpl(api, server, (MemberImpl) member)
-                                .setMuted(newMuted)
-                                .setDeafened(newDeafened)
-                                .setSelfMuted(newSelfMuted)
-                                .setSelfDeafened(newSelfDeafened);
+                    // Check the cache first to see if we can update an existing Member object.
+                    MemberImpl oldMember = (MemberImpl) server.getRealMemberById(userId).orElse(null);
+                    if (oldMember == null && !packet.hasNonNull("member")) {
+                        // If there is no member in the cache and we don't receive a member field,
+                        // we will log it and return. I'm actually not sure if this is normal behavior;
+                        // Maybe the logging should be removed if it is, but the data being lost (non-cacheable)
+                        // is still notable.
+                        logger.warn("Received VOICE_STATE_UPDATE packet without "
+                                + "member field or member in the cache: {}", packet);
+                        return;
                     }
+
+                    // For the update, prioritizes using the Member in the cache;
+                    // If not present, we use the member in the packet.
+                    MemberImpl newMember = ((oldMember != null)
+                            ? oldMember
+                            : new MemberImpl(api, server, packet.get("member"), null))
+                                .setMuted(newMuted)
+                                .setDeafened(newDeafened)
+                                .setSelfMuted(newSelfMuted)
+                                .setSelfDeafened(newSelfDeafened);
 
                     // Update the cache with the new member prior to dispatching any events.
                     api.addMemberToCacheOrReplaceExisting(newMember);
