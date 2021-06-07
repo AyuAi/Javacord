@@ -372,10 +372,12 @@ public class ServerImpl implements Server, Cleanupable, InternalServerAttachable
 
         if (data.hasNonNull("voice_states")) {
             for (JsonNode voiceStateJson : data.get("voice_states")) {
-                ServerVoiceChannelImpl channel =
-                        (ServerVoiceChannelImpl) getVoiceChannelById(voiceStateJson.get("channel_id").asLong())
-                                .orElseThrow(AssertionError::new);
-                channel.addConnectedUser(voiceStateJson.get("user_id").asLong());
+                Optional<ServerVoiceChannel> channel =
+                        getVoiceChannelById(voiceStateJson.get("channel_id").asLong());
+                if (!channel.isPresent()) {
+                    continue;
+                }
+                ((ServerVoiceChannelImpl) channel.get()).addConnectedUser(voiceStateJson.get("user_id").asLong());
             }
         }
 
