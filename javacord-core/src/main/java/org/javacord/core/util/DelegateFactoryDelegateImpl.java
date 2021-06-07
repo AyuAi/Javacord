@@ -2,6 +2,9 @@ package org.javacord.core.util;
 
 import org.javacord.api.DiscordApi;
 import org.javacord.api.audio.internal.AudioSourceBaseDelegate;
+import org.javacord.api.command.internal.ApplicationCommandBuilderDelegate;
+import org.javacord.api.command.internal.ApplicationCommandOptionBuilderDelegate;
+import org.javacord.api.command.internal.ApplicationCommandOptionChoiceBuilderDelegate;
 import org.javacord.api.entity.channel.GroupChannel;
 import org.javacord.api.entity.channel.ServerChannel;
 import org.javacord.api.entity.channel.ServerTextChannel;
@@ -17,6 +20,7 @@ import org.javacord.api.entity.emoji.KnownCustomEmoji;
 import org.javacord.api.entity.emoji.internal.CustomEmojiBuilderDelegate;
 import org.javacord.api.entity.emoji.internal.CustomEmojiUpdaterDelegate;
 import org.javacord.api.entity.message.embed.internal.EmbedBuilderDelegate;
+import org.javacord.api.entity.message.internal.InteractionMessageBuilderDelegate;
 import org.javacord.api.entity.message.internal.MessageBuilderDelegate;
 import org.javacord.api.entity.message.internal.WebhookMessageBuilderDelegate;
 import org.javacord.api.entity.message.mention.internal.AllowedMentionsBuilderDelegate;
@@ -41,6 +45,9 @@ import org.javacord.core.AccountUpdaterDelegateImpl;
 import org.javacord.core.DiscordApiBuilderDelegateImpl;
 import org.javacord.core.DiscordApiImpl;
 import org.javacord.core.audio.AudioSourceBaseDelegateImpl;
+import org.javacord.core.command.ApplicationCommandBuilderDelegateImpl;
+import org.javacord.core.command.ApplicationCommandOptionBuilderDelegateImpl;
+import org.javacord.core.command.ApplicationCommandOptionChoiceBuilderDelegateImpl;
 import org.javacord.core.entity.channel.ChannelCategoryBuilderDelegateImpl;
 import org.javacord.core.entity.channel.ChannelUpdaterDelegateImpl;
 import org.javacord.core.entity.channel.ServerChannelUpdaterDelegateImpl;
@@ -50,6 +57,7 @@ import org.javacord.core.entity.channel.ServerVoiceChannelBuilderDelegateImpl;
 import org.javacord.core.entity.channel.ServerVoiceChannelUpdaterDelegateImpl;
 import org.javacord.core.entity.emoji.CustomEmojiBuilderDelegateImpl;
 import org.javacord.core.entity.emoji.CustomEmojiUpdaterDelegateImpl;
+import org.javacord.core.entity.message.InteractionMessageBuilderDelegateImpl;
 import org.javacord.core.entity.message.MessageBuilderDelegateImpl;
 import org.javacord.core.entity.message.WebhookMessageBuilderDelegateImpl;
 import org.javacord.core.entity.message.embed.EmbedBuilderDelegateImpl;
@@ -89,6 +97,11 @@ public class DelegateFactoryDelegateImpl implements DelegateFactoryDelegate {
     @Override
     public MessageBuilderDelegate createMessageBuilderDelegate() {
         return new MessageBuilderDelegateImpl();
+    }
+
+    @Override
+    public InteractionMessageBuilderDelegate createInteractionMessageBuilderDelegate() {
+        return new InteractionMessageBuilderDelegateImpl();
     }
 
     @Override
@@ -194,6 +207,21 @@ public class DelegateFactoryDelegateImpl implements DelegateFactoryDelegate {
     @Override
     public AudioSourceBaseDelegate createAudioSourceBaseDelegate(DiscordApi api) {
         return new AudioSourceBaseDelegateImpl(api);
+    }
+
+    @Override
+    public ApplicationCommandBuilderDelegate createApplicationCommandBuilderDelegate() {
+        return new ApplicationCommandBuilderDelegateImpl();
+    }
+
+    @Override
+    public ApplicationCommandOptionBuilderDelegate createApplicationCommandOptionBuilderDelegate() {
+        return new ApplicationCommandOptionBuilderDelegateImpl();
+    }
+
+    @Override
+    public ApplicationCommandOptionChoiceBuilderDelegate createApplicationCommandOptionChoiceBuilderDelegate() {
+        return new ApplicationCommandOptionChoiceBuilderDelegateImpl();
     }
 
     @Override

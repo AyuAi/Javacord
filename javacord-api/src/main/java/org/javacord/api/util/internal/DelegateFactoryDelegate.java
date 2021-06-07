@@ -2,6 +2,9 @@ package org.javacord.api.util.internal;
 
 import org.javacord.api.DiscordApi;
 import org.javacord.api.audio.internal.AudioSourceBaseDelegate;
+import org.javacord.api.command.internal.ApplicationCommandBuilderDelegate;
+import org.javacord.api.command.internal.ApplicationCommandOptionBuilderDelegate;
+import org.javacord.api.command.internal.ApplicationCommandOptionChoiceBuilderDelegate;
 import org.javacord.api.entity.channel.GroupChannel;
 import org.javacord.api.entity.channel.ServerChannel;
 import org.javacord.api.entity.channel.ServerTextChannel;
@@ -17,6 +20,7 @@ import org.javacord.api.entity.emoji.KnownCustomEmoji;
 import org.javacord.api.entity.emoji.internal.CustomEmojiBuilderDelegate;
 import org.javacord.api.entity.emoji.internal.CustomEmojiUpdaterDelegate;
 import org.javacord.api.entity.message.embed.internal.EmbedBuilderDelegate;
+import org.javacord.api.entity.message.internal.InteractionMessageBuilderDelegate;
 import org.javacord.api.entity.message.internal.MessageBuilderDelegate;
 import org.javacord.api.entity.message.internal.WebhookMessageBuilderDelegate;
 import org.javacord.api.entity.message.mention.internal.AllowedMentionsBuilderDelegate;
@@ -70,6 +74,13 @@ public interface DelegateFactoryDelegate {
      * @return A new message builder delegate.
      */
     MessageBuilderDelegate createMessageBuilderDelegate();
+
+    /**
+     * Creates a new interaction message builder delegate.
+     *
+     * @return A new interaction message builder delegate.
+     */
+    InteractionMessageBuilderDelegate createInteractionMessageBuilderDelegate();
 
     /**
      * Creates a new webhook message builder delegate.
@@ -250,5 +261,26 @@ public interface DelegateFactoryDelegate {
      * @return A new discord exception validator.
      */
     DiscordExceptionValidator createDiscordExceptionValidator();
+
+    /**
+     * Creates a new application command builder delegate.
+     *
+     * @return The application command builder delegate.
+     */
+    ApplicationCommandBuilderDelegate createApplicationCommandBuilderDelegate();
+
+    /**
+     * Creates a new application command option builder delegate.
+     *
+     * @return The application command option builder delegate.
+     */
+    ApplicationCommandOptionBuilderDelegate createApplicationCommandOptionBuilderDelegate();
+
+    /**
+     * Creates a new application command option choice builder delegate.
+     *
+     * @return The application command option choice builder delegate.
+     */
+    ApplicationCommandOptionChoiceBuilderDelegate createApplicationCommandOptionChoiceBuilderDelegate();
 
 }
