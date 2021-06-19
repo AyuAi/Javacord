@@ -40,7 +40,6 @@ import org.javacord.core.util.handler.channel.ChannelUpdateHandler;
 import org.javacord.core.util.handler.channel.WebhooksUpdateHandler;
 import org.javacord.core.util.handler.channel.invite.InviteCreateHandler;
 import org.javacord.core.util.handler.channel.invite.InviteDeleteHandler;
-import org.javacord.core.util.handler.command.InteractionCreateHandler;
 import org.javacord.core.util.handler.guild.GuildBanAddHandler;
 import org.javacord.core.util.handler.guild.GuildBanRemoveHandler;
 import org.javacord.core.util.handler.guild.GuildCreateHandler;
@@ -56,6 +55,7 @@ import org.javacord.core.util.handler.guild.VoiceStateUpdateHandler;
 import org.javacord.core.util.handler.guild.role.GuildRoleCreateHandler;
 import org.javacord.core.util.handler.guild.role.GuildRoleDeleteHandler;
 import org.javacord.core.util.handler.guild.role.GuildRoleUpdateHandler;
+import org.javacord.core.util.handler.interaction.InteractionCreateHandler;
 import org.javacord.core.util.handler.message.MessageCreateHandler;
 import org.javacord.core.util.handler.message.MessageDeleteBulkHandler;
 import org.javacord.core.util.handler.message.MessageDeleteHandler;
@@ -447,7 +447,9 @@ public class DiscordWebSocketAdapter extends WebSocketAdapter {
             websocket.addListener(this);
             websocket.addListener(new WebSocketLogger());
 
-            api.getGatewayIdentifyRatelimiter().requestQuota();
+            if (sessionId == null) {
+                api.getGatewayIdentifyRatelimiter().requestQuota();
+            }
             websocket.connect();
         } catch (Throwable t) {
             logger.warn("An error occurred while connecting to websocket", t);

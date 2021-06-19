@@ -2,9 +2,6 @@ package org.javacord.api.util.internal;
 
 import org.javacord.api.DiscordApi;
 import org.javacord.api.audio.internal.AudioSourceBaseDelegate;
-import org.javacord.api.command.internal.ApplicationCommandBuilderDelegate;
-import org.javacord.api.command.internal.ApplicationCommandOptionBuilderDelegate;
-import org.javacord.api.command.internal.ApplicationCommandOptionChoiceBuilderDelegate;
 import org.javacord.api.entity.channel.GroupChannel;
 import org.javacord.api.entity.channel.ServerChannel;
 import org.javacord.api.entity.channel.ServerTextChannel;
@@ -19,6 +16,8 @@ import org.javacord.api.entity.channel.internal.ServerVoiceChannelUpdaterDelegat
 import org.javacord.api.entity.emoji.KnownCustomEmoji;
 import org.javacord.api.entity.emoji.internal.CustomEmojiBuilderDelegate;
 import org.javacord.api.entity.emoji.internal.CustomEmojiUpdaterDelegate;
+import org.javacord.api.entity.message.component.internal.ActionRowBuilderDelegate;
+import org.javacord.api.entity.message.component.internal.ButtonBuilderDelegate;
 import org.javacord.api.entity.message.embed.internal.EmbedBuilderDelegate;
 import org.javacord.api.entity.message.internal.InteractionMessageBuilderDelegate;
 import org.javacord.api.entity.message.internal.MessageBuilderDelegate;
@@ -36,6 +35,12 @@ import org.javacord.api.entity.server.invite.internal.InviteBuilderDelegate;
 import org.javacord.api.entity.webhook.Webhook;
 import org.javacord.api.entity.webhook.internal.WebhookBuilderDelegate;
 import org.javacord.api.entity.webhook.internal.WebhookUpdaterDelegate;
+import org.javacord.api.interaction.internal.ApplicationCommandBuilderDelegate;
+import org.javacord.api.interaction.internal.ApplicationCommandOptionBuilderDelegate;
+import org.javacord.api.interaction.internal.ApplicationCommandOptionChoiceBuilderDelegate;
+import org.javacord.api.interaction.internal.ApplicationCommandPermissionsBuilderDelegate;
+import org.javacord.api.interaction.internal.ApplicationCommandPermissionsUpdaterDelegate;
+import org.javacord.api.interaction.internal.ApplicationCommandUpdaterDelegate;
 import org.javacord.api.internal.AccountUpdaterDelegate;
 import org.javacord.api.internal.DiscordApiBuilderDelegate;
 import org.javacord.api.util.exception.DiscordExceptionValidator;
@@ -177,6 +182,14 @@ public interface DelegateFactoryDelegate {
     AccountUpdaterDelegate createAccountUpdaterDelegate(DiscordApi api);
 
     /**
+     * Creates a new application command updater delegate.
+     *
+     * @param commandId The application command id.
+     * @return A new application command updater delegate.
+     */
+    ApplicationCommandUpdaterDelegate createApplicationCommandUpdaterDelegate(long commandId);
+
+    /**
      * Creates a new group channel updater delegate.
      *
      * @param channel The channel to update.
@@ -277,10 +290,39 @@ public interface DelegateFactoryDelegate {
     ApplicationCommandOptionBuilderDelegate createApplicationCommandOptionBuilderDelegate();
 
     /**
+     * Creates a new application command permissions updater delegate.
+     *
+     * @param server The server where the update should be performed on.
+     * @return The application command permissions updater delegate.
+     */
+    ApplicationCommandPermissionsUpdaterDelegate createApplicationCommandPermissionsUpdaterDelegate(Server server);
+
+    /**
+     * Creates a new application command permissions builder delegate.
+     *
+     * @return The application command permissions builder delegate.
+     */
+    ApplicationCommandPermissionsBuilderDelegate createApplicationCommandPermissionsBuilderDelegate();
+
+    /**
      * Creates a new application command option choice builder delegate.
      *
      * @return The application command option choice builder delegate.
      */
     ApplicationCommandOptionChoiceBuilderDelegate createApplicationCommandOptionChoiceBuilderDelegate();
 
+
+    /**
+     * Creates a new ActionRow builder delegate.
+     *
+     * @return A new ActionRow builder delegate.
+     */
+    ActionRowBuilderDelegate createActionRowBuilderDelegate();
+
+    /**
+     * Creates a new Button builder delegate.
+     *
+     * @return A new Button builder delegate.
+     */
+    ButtonBuilderDelegate createButtonBuilderDelegate();
 }
